@@ -1,0 +1,4 @@
+{
+  "name": "hermes-agent",
+  "install": "bash .cursor/install.sh"
+}

@@ -107,8 +107,11 @@ and Tailscale guidance.
 ### Migrating from the single-connection settings
 
 The first launch of a registry-capable build imports your existing settings
-automatically: the global connection mode and any per-profile overrides from
-Settings → Gateway become named registry entries (deduplicated by URL/host).
+automatically: the global connection mode and any legacy per-profile
+overrides from Settings → Gateway become named registry entries (deduplicated
+by URL/host). (Newer builds no longer offer per-profile overrides in the
+Gateways settings page — gateway connections are machine-level, and profiles
+are discovered from the gateways you connect.)
 The legacy settings file is left untouched, so older builds on the same
 machine keep working. If a migrated name collided, it was suffixed
 (`Homelab 2`).

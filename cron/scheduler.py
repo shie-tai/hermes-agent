@@ -191,6 +191,22 @@ def _failure_streak_nudge(job: dict) -> str:
     )
 
 
+# Billing/credit-exhaustion language, matched against the lowercased error
+# text. Deliberately explicit phrases only — a bare "quota" or a status code
+# is NOT billing evidence on its own (the rate-limit branch owns those), but
+# "insufficient_quota" and "exceeded your current quota" are how OpenAI
+# phrases a spent prepaid balance. Mirrors the keyword families of
+# agent.auxiliary_client._is_payment_error.
+_PAYMENT_ERROR_RE = re.compile(
+    r"("
+    r"no credits|out of credits|insufficient credits|add credits"
+    r"|no usable credits|credit balance|balance_depleted"
+    r"|insufficient funds|payment required|\b402\b"
+    r"|insufficient_quota|exceeded your current quota|billing"
+    r")"
+)
+
+
 def _summarize_cron_failure_for_delivery(job: dict, error: str | None) -> str:
     """Return a compact one-line failure message for chat delivery.
 
@@ -251,6 +267,26 @@ def _summarize_cron_failure_for_delivery(job: dict, error: str | None) -> str:
         return (
             f"⚠️ Cron '{job_name}' failed: script timed out. "
             "No model was invoked. Full details saved in cron output."
+        )
+
+    # Billing/credit exhaustion masquerades as auth or rate limiting:
+    # providers deliver "out of credits" bodies under 401/402/429 envelopes
+    # ("Error code: 401 - ... You have no credits remaining", "429 ...
+    # insufficient_quota"), so without this branch the 401/403 match below
+    # reports "provider authentication error" and the operator rotates
+    # credentials that were never the problem (field-reported: an OpenAI
+    # zero-balance account produced days of "authentication" alerts and
+    # repeated pointless token rotations). Match explicit billing language
+    # only, and check it before the rate-limit branch because
+    # "insufficient_quota" payloads also contain "quota"/"429".
+    if provider_reachable and _PAYMENT_ERROR_RE.search(lower):
+        return (
+            f"⚠️ Cron '{job_name}' failed: provider billing/credits error — "
+            "the provider account is out of credits or its paid quota is "
+            "exhausted. This is not an authentication problem; add credits "
+            "or switch this job's provider. "
+            f"{_fallback_chain_phrase()} "
+            "Full details saved in cron output."
         )
 
     # Provider/API failures are the common noisy path. Keep these short.
@@ -325,7 +361,9 @@ def _summarize_cron_failure_for_delivery(job: dict, error: str | None) -> str:
         re.search(r"authenticat|authoriz", lower) or re.search(r"\b(401|403)\b", text)
     ):
         return (
-            f"⚠️ Cron '{job_name}' failed: provider authentication error. "
+            f"⚠️ Cron '{job_name}' failed: provider authentication error — "
+            "the provider rejected the configured credential, or the account "
+            "lacks access to the requested model (401/403). "
             "Full details saved in cron output."
         )
 

@@ -424,6 +424,22 @@ _GATEWAY_AUTH_ERROR_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Billing/credit-exhaustion bodies ride 401/402/429 envelopes ("Error code:
+# 401 - ... You have no credits remaining", "429 ... insufficient_quota"), so
+# they must be recognized by their billing language and checked BEFORE the
+# auth and rate-limit branches. Otherwise a zero-balance account is reported
+# as "authentication failed" and the operator rotates credentials that were
+# never the problem (field-reported misdirection).
+_GATEWAY_PAYMENT_ERROR_RE = re.compile(
+    r"("
+    r"no\s+credits|out\s+of\s+credits|insufficient\s+credits|add\s+credits"
+    r"|no\s+usable\s+credits|credit\s+balance|balance_depleted"
+    r"|insufficient\s+funds|payment\s+required|\b402\b"
+    r"|insufficient_quota|exceeded\s+your\s+current\s+quota|billing"
+    r")",
+    re.IGNORECASE,
+)
+
 _GATEWAY_RATE_LIMIT_RE = re.compile(
     r"(rate\s+limit|rate-limited|\b429\b|quota|usage\s+limit)",
     re.IGNORECASE,
@@ -729,6 +745,15 @@ def _format_exec_approval_fallback(
 
 def _gateway_provider_error_reply(text: str) -> str:
     """Map raw provider/API errors to a short user-safe Telegram reply."""
+    # Checked before auth/rate-limit: billing bodies arrive under 401/429
+    # envelopes those branches would otherwise claim.
+    if _GATEWAY_PAYMENT_ERROR_RE.search(text):
+        return (
+            "⚠️ The model provider account is out of credits or its paid quota "
+            "is exhausted — this is billing, not authentication. Add credits or "
+            "switch the configured provider/model; raw provider details are in "
+            "the gateway logs."
+        )
     if _GATEWAY_AUTH_ERROR_RE.search(text):
         return (
             "⚠️ Provider authentication failed. Check the configured credentials; "

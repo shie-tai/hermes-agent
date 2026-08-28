@@ -528,10 +528,14 @@ def calendar_create(args):
     if args.attendees:
         event["attendees"] = [{"email": e.strip()} for e in args.attendees.split(",") if e.strip()]
 
+    # Without sendUpdates=all, Google creates the event only on the organizer
+    # calendar and never emails the invite — attendees do not get it.
+    send_updates = "all" if args.attendees else "none"
+
     if _gws_binary():
         result = _run_gws(
             ["calendar", "events", "insert"],
-            params={"calendarId": args.calendar},
+            params={"calendarId": args.calendar, "sendUpdates": send_updates},
             body=event,
         )
         print(json.dumps({
@@ -543,7 +547,11 @@ def calendar_create(args):
         return
 
     service = build_service("calendar", "v3")
-    result = service.events().insert(calendarId=args.calendar, body=event).execute()
+    result = service.events().insert(
+        calendarId=args.calendar,
+        body=event,
+        sendUpdates=send_updates,
+    ).execute()
     print(json.dumps({
         "status": "created",
         "id": result["id"],
